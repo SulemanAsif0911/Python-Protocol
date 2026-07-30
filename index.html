@@ -258,7 +258,8 @@ canvas{display:block;}
 <!-- FATAL ERROR (library/CDN failed) -->
 <div id="fatal-error" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(10,10,12,.96);color:#fff;font-family:var(--font-mono);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;">
   <div style="font-size:22px;color:var(--red,#e05252);font-weight:800;margin-bottom:12px;">Couldn't load the 3D engine</div>
-  <div id="fatal-error-msg" style="max-width:520px;font-size:13px;line-height:1.6;color:#ccc;">three.js couldn't load. Make sure three.min.js and GLTFLoader.js are sitting in the same folder as this index.html — try reloading the page.</div>
+  <div id="fatal-error-msg" style="max-width:560px;font-size:13px;line-height:1.6;color:#ccc;">three.js couldn't load. Make sure three.min.js and GLTFLoader.js are sitting in the same folder as this index.html — try reloading the page.</div>
+  <pre id="fatal-error-diag" style="max-width:560px;text-align:left;background:#1a1b1e;border:1px solid #333;border-radius:6px;padding:12px 16px;margin-top:14px;font-size:12px;line-height:1.7;color:#ddd;white-space:pre-wrap;"></pre>
   <button onclick="location.reload()" style="margin-top:18px;padding:10px 22px;background:var(--orange,#e8823a);border:none;border-radius:4px;color:#111;font-weight:700;cursor:pointer;">Reload page</button>
 </div>
 
@@ -411,23 +412,51 @@ const loadFill = document.getElementById('loadbar-fill');
 const loadPct = document.getElementById('loading-pct');
 
 let loader = null;
-if(typeof THREE === 'undefined'){
-  showFatalError('three.js itself never loaded — check that three.min.js is next to index.html and reload.');
-} else if(typeof THREE.GLTFLoader !== 'function'){
-  showFatalError('three.js loaded, but GLTFLoader.js did not — check that GLTFLoader.js is next to index.html and reload.');
-} else {
-  try{ loader = new THREE.GLTFLoader(); }catch(e){ console.error('GLTFLoader failed to initialize', e); showFatalError('GLTFLoader failed to initialize: '+e.message); }
+function initEngine(){
+  if(typeof THREE === 'undefined'){
+    diagnoseAndShowError('three.js itself did not execute (three.min.js).');
+    return;
+  }
+  if(typeof THREE.GLTFLoader !== 'function'){
+    diagnoseAndShowError('GLTFLoader.js did not execute.');
+    return;
+  }
+  try{ loader = new THREE.GLTFLoader(); }
+  catch(e){ console.error('GLTFLoader failed to initialize', e); showFatalError('GLTFLoader failed to initialize: '+e.message); }
 }
-function showFatalError(msg){
-  console.error(msg);
+// Runs real fetch() checks against every required file so the error screen
+// shows the ACTUAL http status (404 / wrong path / wrong MIME / etc.)
+// instead of a guess.
+function diagnoseAndShowError(headline){
+  const files = ['three.min.js','GLTFLoader.js','revolver.glb','rec_center.glb','target.glb','shot.mp3','hit.mp3'];
+  Promise.all(files.map(f=>
+    fetch(f, {cache:'no-store'}).then(r=>({file:f, ok:r.ok, status:r.status, type:r.headers.get('content-type')}))
+                                 .catch(err=>({file:f, ok:false, status:'network error', type:String(err)}))
+  )).then(results=>{
+    const lines = results.map(r=>{
+      const mark = r.ok ? '\u2713' : '\u2717';
+      return `${mark} ${r.file} — ${r.ok ? 'OK ('+r.status+')' : 'FAILED ('+r.status+')'}`;
+    });
+    showFatalError(headline, lines);
+  });
+}
+function showFatalError(msg, diagLines){
+  console.error(msg, diagLines);
   const el = document.getElementById('fatal-error');
   const msgEl = document.getElementById('fatal-error-msg');
-  if(msgEl) msgEl.textContent = msg;
+  if(msgEl){
+    msgEl.textContent = msg + ' Below is a live check of every file this page requested from the SAME folder as index.html:';
+  }
+  const diagEl = document.getElementById('fatal-error-diag');
+  if(diagEl){
+    diagEl.textContent = diagLines ? diagLines.join('\n') : 'Checking files…';
+  }
   if(el) el.style.display = 'flex';
   const loadingScreen = document.getElementById('loading');
   if(loadingScreen) loadingScreen.style.display = 'none';
 }
 let weaponGLTF = null, mapGLTF = null, targetGLTF = null;
+initEngine();
 // map (rec_center.glb) is by far the largest download now, so it gets most
 // of the progress-bar weight.
 const progress = { weapon:0, map:0, target:0 };
@@ -998,13 +1027,13 @@ document.querySelectorAll('.diff-card').forEach(card=>{
 });
 
 document.getElementById('start-btn').addEventListener('click', ()=>{
-  if(!loader){ showFatalError('The 3D engine (GLTFLoader) never initialized, so models can\'t be loaded. Reload the page.'); return; }
+  if(!loader){ diagnoseAndShowError('The 3D engine (GLTFLoader) never initialized, so models can\'t be loaded.'); return; }
   document.getElementById('menu').style.display='none';
   if(assetsReady){ beginCountdown(); return; }
   document.getElementById('loading').style.display='flex';
   loadAllAssets(()=>{
     if(!weaponGLTF || !mapGLTF){
-      showFatalError('One or more models failed to load (check the file names/paths next to index.html: revolver.glb, rec_center.glb, target.glb). Reload and check the console for the failing URL.');
+      diagnoseAndShowError('One or more 3D models failed to load.');
       return;
     }
     setupWeapon(weaponGLTF);
