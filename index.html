@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <title>PYTHON PROTOCOL // Rec Center Aim Training</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <style>
 :root{
   --bg:#08090b;
@@ -255,6 +255,13 @@ canvas{display:block;}
   <div id="loading-pct">0%</div>
 </div>
 
+<!-- FATAL ERROR (library/CDN failed) -->
+<div id="fatal-error" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(10,10,12,.96);color:#fff;font-family:var(--font-mono);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;">
+  <div style="font-size:22px;color:var(--red,#e05252);font-weight:800;margin-bottom:12px;">Couldn't load the 3D engine</div>
+  <div id="fatal-error-msg" style="max-width:520px;font-size:13px;line-height:1.6;color:#ccc;">three.js failed to load from the CDN, so nothing can render. This is usually a network/CDN hiccup, not a bug in the game — try reloading the page.</div>
+  <button onclick="location.reload()" style="margin-top:18px;padding:10px 22px;background:var(--orange,#e8823a);border:none;border-radius:4px;color:#111;font-weight:700;cursor:pointer;">Reload page</button>
+</div>
+
 <!-- COUNTDOWN -->
 <div id="countdown"><div id="countdown-num">3</div></div>
 
@@ -404,7 +411,22 @@ const loadFill = document.getElementById('loadbar-fill');
 const loadPct = document.getElementById('loading-pct');
 
 let loader = null;
-try{ loader = new THREE.GLTFLoader(); }catch(e){ console.error('GLTFLoader failed to initialize', e); }
+if(typeof THREE === 'undefined'){
+  showFatalError('three.js itself never loaded (script blocked or offline). Check your connection / ad-blocker and reload.');
+} else if(typeof THREE.GLTFLoader !== 'function'){
+  showFatalError('three.js loaded, but the GLTFLoader add-on did not (its CDN request likely failed). Reload the page — if this keeps happening, the CDN may be temporarily down.');
+} else {
+  try{ loader = new THREE.GLTFLoader(); }catch(e){ console.error('GLTFLoader failed to initialize', e); showFatalError('GLTFLoader failed to initialize: '+e.message); }
+}
+function showFatalError(msg){
+  console.error(msg);
+  const el = document.getElementById('fatal-error');
+  const msgEl = document.getElementById('fatal-error-msg');
+  if(msgEl) msgEl.textContent = msg;
+  if(el) el.style.display = 'flex';
+  const loadingScreen = document.getElementById('loading');
+  if(loadingScreen) loadingScreen.style.display = 'none';
+}
 let weaponGLTF = null, mapGLTF = null, targetGLTF = null;
 // map (rec_center.glb) is by far the largest download now, so it gets most
 // of the progress-bar weight.
@@ -976,10 +998,15 @@ document.querySelectorAll('.diff-card').forEach(card=>{
 });
 
 document.getElementById('start-btn').addEventListener('click', ()=>{
+  if(!loader){ showFatalError('The 3D engine (GLTFLoader) never initialized, so models can\'t be loaded. Reload the page.'); return; }
   document.getElementById('menu').style.display='none';
   if(assetsReady){ beginCountdown(); return; }
   document.getElementById('loading').style.display='flex';
   loadAllAssets(()=>{
+    if(!weaponGLTF || !mapGLTF){
+      showFatalError('One or more models failed to load (check the file names/paths next to index.html: revolver.glb, rec_center.glb, target.glb). Reload and check the console for the failing URL.');
+      return;
+    }
     setupWeapon(weaponGLTF);
     normalizeAndAddMap(mapGLTF);
     if(!targetGLTF){ console.warn('target model missing'); }
